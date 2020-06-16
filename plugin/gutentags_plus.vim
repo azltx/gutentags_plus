@@ -41,6 +41,11 @@ endfunc
 " search gtags db by gutentags buffer variable
 "----------------------------------------------------------------------
 function! s:get_gtags_file() abort
+	let tags = getcwd() . "/GTAGS"
+	if filereadable(tags)
+		return tags
+	endif
+
 	if !exists('b:gutentags_files')
 		return ''
 	endif
@@ -128,7 +133,7 @@ endfunc
 "----------------------------------------------------------------------
 function! s:GscopeAdd() abort
 	let dbname = s:get_gtags_file()
-	let root = get(b:, 'gutentags_root', '')
+	let root = get(b:, 'gutentags_root', getcwd())
 	if dbname == '' || root == ''
 		call s:ErrorMsg("no gtags database for this project, check gutentags's documents")
 		return 0
@@ -206,7 +211,7 @@ endfunc
 function! s:GscopeFind(bang, what, ...)
 	let keyword = (a:0 > 0)? a:1 : ''
 	let dbname = s:get_gtags_file()
-	let root = get(b:, 'gutentags_root', '')
+	let root = get(b:, 'gutentags_root', getcwd())
 	if dbname == '' || root == ''
 		call s:ErrorMsg("no gtags database for this project, check gutentags's documents")
 		return 0
