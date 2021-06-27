@@ -304,7 +304,7 @@ function! s:GscopeFind(bang, what, ...)
 	endif
 	if success != 0 && a:bang == 0
 		let height = get(g:, 'gutentags_plus_height', 6)
-		call s:quickfix_open(height)
+		" ltx: buggy withe nvim; call s:quickfix_open(height)
 	endif
 endfunc
 
@@ -671,7 +671,7 @@ function! s:FindTags(bang, tagname, ...)
 	endif
 	if a:bang == 0
 		let height = get(g:, 'gutentags_plus_height', 6)
-		call s:quickfix_open(height)
+		" ltx: buggy withe nvim; call s:quickfix_open(height)
 	endif
 	return 1
 endfunc
