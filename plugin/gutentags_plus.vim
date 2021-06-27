@@ -3,9 +3,11 @@
 " gutentags_plus.vim - connecting gtags_cscope db on demand
 "
 " Created by skywind on 2018/04/25
-" Last Modified: 2018/05/22 15:54
+" Last Modified: 2021/03/02 23:30
 "
 "======================================================================
+
+" vim: set ts=4 sw=4 tw=78 noet :
 
 let s:windows = has('win32') || has('win64') || has('win16') || has('win95')
 
@@ -212,7 +214,7 @@ function! s:GscopeFind(bang, what, ...)
 	let keyword = (a:0 > 0)? a:1 : ''
 	let dbname = s:get_gtags_file()
 	let root = get(b:, 'gutentags_root', getcwd())
-	if dbname == '' || root == ''
+	if (dbname == '' || root == '') && a:what != 'z'
 		call s:ErrorMsg("no gtags database for this project, check gutentags's documents")
 		return 0
 	endif
@@ -257,6 +259,10 @@ function! s:GscopeFind(bang, what, ...)
 	endif
 	let text = "[cscope ".a:what.": ".text."]"
 	let title = "GscopeFind ".a:what.' "'.keyword.'"'
+	let save_local = &l:efm
+	let save_global = &g:efm
+	let &g:efm = '%f:%l:%m'
+	let &l:efm = '%f:%l:%m'
 	silent exec 'cexpr text'
 	if has('nvim') == 0 && (v:version >= 800 || has('patch-7.4.2210'))
 		call setqflist([], 'a', {'title':title})
@@ -291,6 +297,8 @@ function! s:GscopeFind(bang, what, ...)
 		echohl NONE
 		let success = 0
 	endtry
+	let &g:efm = save_global
+	let &l:efm = save_local
 	if winbufnr('%') == nbuf
 		call cursor(nrow, ncol)
 	endif
@@ -318,17 +326,56 @@ command! -nargs=0 GscopeKill call s:GscopeKill()
 "----------------------------------------------------------------------
 " taglist
 "----------------------------------------------------------------------
+function! s:global_taglist(pattern) abort
+	let dbname = s:get_gtags_file()
+	let root = get(b:, 'gutentags_root', '')
+	if dbname == '' || root == ''
+		call s:ErrorMsg("no gtags database for this project, check gutentags's documents")
+		return 0
+	endif
+	if !filereadable(dbname)
+		call s:ErrorMsg('gtags database is not ready yet')
+		return 0
+	endif
+	let pwd = getcwd()
+	let $GTAGSDBPATH = fnamemodify(dbname, ':p:h')
+	let $GTAGSROOT = root
+	let lst = systemlist('global --result=cscope -a "'. a:pattern . '"')
+	let rsl_list = []
+	for li in lst
+		let tag_info = {}
+		let tag_info['filename'] = li[:stridx(li, " ") - 1]
+		let li = li[stridx(li, " ") + 1:]
+		let tag_info['name'] = li[:stridx(li, " ") - 1]
+		let li = li[stridx(li, " ") + 1:]
+		let tag_info['line'] = str2nr(li[:stridx(li, " ") - 1])
+		let li = li[stridx(li, " ") + 1:]
+		let tag_info['cmd'] = '/^' . li . '$/'
+		let rsl_list = add(rsl_list, tag_info)
+	endfor
+	return rsl_list
+endfunc
+
+
 function! s:taglist(pattern)
-    let ftags = []
-    try
-        let ftags = taglist(a:pattern)
-    catch /^Vim\%((\a\+)\)\=:E/
-        " if error occured, reset tagbsearch option and try again.
-        let bak = &tagbsearch
-        set notagbsearch
-        let ftags = taglist(a:pattern)
-        let &tagbsearch = bak
-    endtry
+	let ftags = []
+	try
+		if &cscopetag
+			let ftags = s:global_taglist(a:pattern)
+		else
+			let ftags = taglist(a:pattern)
+		endif
+	catch /^Vim\%((\a\+)\)\=:E/
+		" if error occured, reset tagbsearch option and try again.
+		let bak = &tagbsearch
+		set notagbsearch
+		if &cscopetag
+			let ftags = s:global_taglist(a:pattern)
+		else
+			let ftags = taglist(a:pattern)
+		endif
+		let &tagbsearch = bak
+	endtry
 	" take care ctags windows filename bug
 	let win = has('win32') || has('win64') || has('win95') || has('win16')
 	for item in ftags
@@ -356,7 +403,7 @@ function! s:taglist(pattern)
 			end
 		endif
 	endfor
-    return ftags
+	return ftags
 endfunc
 
 
@@ -400,7 +447,7 @@ endfunc
 "----------------------------------------------------------------------
 function! s:signature(funname, fn_only, filetype)
 	let tags = s:tagfind(a:funname)
-    let funpat = escape(a:funname, '[\*~^')
+	let funpat = escape(a:funname, '[\*~^')
 	let fill_tag = []
 	let ft = (a:filetype == '')? &filetype : a:filetype
 	for i in tags
@@ -599,7 +646,11 @@ function! s:FindTags(bang, tagname, ...)
 	let text = 'ctags "'.keyword.'"'
 	let text = "[cscope z: ".text."]"
 	let title = "GscopeFind z \"" .keyword.'"'
-	silent exec 'cexpr text'
+	let save_local = &l:efm
+	let save_global = &g:efm
+	let &g:efm = '%f:%l:%m'
+	let &l:efm = '%f:%l:%m'
+	silent! exec 'cexpr text'
 	if has('nvim') == 0 && (v:version >= 800 || has('patch-7.4.2210'))
 		call setqflist([], 'a', {'title':title})
 	elseif has('nvim') && has('nvim-0.2.2')
@@ -609,16 +660,12 @@ function! s:FindTags(bang, tagname, ...)
 	else
 		call setqflist([], 'a')
 	endif
-	let save_local = &l:efm
-	let save_global = &g:efm
 	for item in signatures
 		let t = item.filename . ':'. item.line . ': ' . item.func_prototype
 		noautocmd silent caddexpr t
 	endfor
 	let &g:efm = save_global
 	let &l:efm = save_local
-	let &g:efm = '%f:%l:%m'
-	let &l:efm = '%f:%l:%m'
 	if winbufnr('%') == nbuf
 		call cursor(nrow, ncol)
 	endif
@@ -634,14 +681,14 @@ endfunc
 " setup keymaps
 "----------------------------------------------------------------------
 func! s:FindCwordCmd(cmd, is_file)
-    let cmd = ":\<C-U>" . a:cmd
-    if a:is_file == 1
-        let cmd .= " " . expand('<cfile>')
-    else
-        let cmd .= " " . expand('<cword>')
-    endif
-    let cmd .= "\<CR>"
-    return cmd
+	let cmd = ":\<C-U>" . a:cmd
+	if a:is_file == 1
+		let cmd .= " " . expand('<cfile>')
+	else
+		let cmd .= " " . expand('<cword>')
+	endif
+	let cmd .= "\<CR>"
+	return cmd
 endf
 
 nnoremap <silent> <expr> <Plug>GscopeFindSymbol     <SID>FindCwordCmd('GscopeFind s', 0)
